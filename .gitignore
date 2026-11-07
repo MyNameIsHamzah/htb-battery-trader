@@ -1,0 +1,32 @@
+# --- Virtual environments ---
+venv/
+.venv/
+env/
+ENV/
+virtualenv/
+.python-version
+
+# --- Python bytecode / build outputs ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.pyd
+build/
+dist/
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Generated outputs ---
+outputs/
+
+# --- VS Code / editors ---
+.vscode/
+.idea/
+
+# --- OS cruft ---
+.DS_Store
+
