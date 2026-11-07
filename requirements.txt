@@ -1,0 +1,8 @@
+pandas>=2.2
+numpy
+scipy>=1.11
+pyarrow
+requests
+pytest
+streamlit
+lightgbm
