@@ -1,6 +1,41 @@
+<<<<<<< HEAD
 __pycache__/
 *.pyc
 *.parquet
 data/
 .env
 .venv/
+=======
+# --- Virtual environments ---
+venv/
+.venv/
+env/
+ENV/
+virtualenv/
+.python-version
+
+# --- Python bytecode / build outputs ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.pyd
+build/
+dist/
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Generated outputs ---
+outputs/
+
+# --- VS Code / editors ---
+.vscode/
+.idea/
+
+# --- OS cruft ---
+.DS_Store
+
+>>>>>>> 36cec0e789b9e9825bfae63ccae438591188b0da
