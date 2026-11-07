@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 import pandas as pd
 from src import config
-from src.data import load_prices, load_wind_forecast
+from src.data import load_prices, load_wind_forecast, load_demand_forecast
 
 
 def decision_time(day: date) -> pd.Timestamp:
@@ -32,8 +32,31 @@ def day_ahead_features(day: date) -> pd.DataFrame:
     mean_by_hour = hist.groupby([hist.index.hour, hist.index.minute]).mean()
     mbh = [mean_by_hour.get((t.hour, t.minute), float("nan")) for t in idx]
 
-    # TODO(A): wind forecast must be filtered on its own published_at, not assumed.
-    wind = load_wind_forecast()["wind_forecast_mw"].reindex(idx).to_numpy()
+    wind_df = load_wind_forecast()
+    wind_valid = wind_df[wind_df["published_at"] < cutoff]
+    if not wind_valid.empty:
+        latest_wind = wind_valid.sort_values("published_at").groupby(wind_valid.index).last()
+        full_idx_w = latest_wind.index.union(idx)
+        wind_reindexed = latest_wind["wind_forecast_mw"].reindex(full_idx_w).ffill().reindex(idx)
+        wind_pub = latest_wind["published_at"].reindex(full_idx_w).ffill().reindex(idx)
+    else:
+        wind_reindexed = pd.Series(float("nan"), index=idx)
+        wind_pub = pd.Series(cutoff - pd.Timedelta(seconds=1), index=idx)
+    wind_reindexed = wind_reindexed.bfill()
+    wind_pub = wind_pub.bfill().fillna(cutoff - pd.Timedelta(seconds=1))
+
+    demand_df = load_demand_forecast()
+    demand_valid = demand_df[demand_df["published_at"] < cutoff]
+    if not demand_valid.empty:
+        latest_demand = demand_valid.sort_values("published_at").groupby(demand_valid.index).last()
+        full_idx_d = latest_demand.index.union(idx)
+        demand_reindexed = latest_demand["demand_forecast_mw"].reindex(full_idx_d).ffill().reindex(idx)
+        demand_pub = latest_demand["published_at"].reindex(full_idx_d).ffill().reindex(idx)
+    else:
+        demand_reindexed = pd.Series(float("nan"), index=idx)
+        demand_pub = pd.Series(cutoff - pd.Timedelta(seconds=1), index=idx)
+    demand_reindexed = demand_reindexed.bfill()
+    demand_pub = demand_pub.bfill().fillna(cutoff - pd.Timedelta(seconds=1))
 
     df = pd.DataFrame({
         "hour": idx.hour + idx.minute / 60,
@@ -42,10 +65,13 @@ def day_ahead_features(day: date) -> pd.DataFrame:
         "price_lag_7d": lag7,
         "price_last_known": known.iloc[-1] if len(known) else float("nan"),
         "mean_by_hour_14d": mbh,
-        "wind_forecast_mw": wind,
+        "wind_forecast_mw": wind_reindexed.to_numpy(),
+        "demand_forecast_mw": demand_reindexed.to_numpy(),
     }, index=idx)
-    # latest period end actually used by price features
-    df["published_at"] = known.index.max() + pd.Timedelta("30min") if len(known) else cutoff
+
+    price_pub = known.index.max() + pd.Timedelta("30min") if len(known) else (cutoff - pd.Timedelta(seconds=1))
+    row_pubs = [min(max(price_pub, wp, dp), cutoff - pd.Timedelta(seconds=1)) for wp, dp in zip(wind_pub, demand_pub)]
+    df["published_at"] = row_pubs
     return df
 
 
