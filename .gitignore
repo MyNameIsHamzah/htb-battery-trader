@@ -1,11 +1,10 @@
-<<<<<<< HEAD
-__pycache__/
+
 *.pyc
 *.parquet
 data/
 .env
 .venv/
-=======
+
 # --- Virtual environments ---
 venv/
 .venv/
@@ -34,7 +33,6 @@ outputs/
 # --- VS Code / editors ---
 .vscode/
 .idea/
-
 # --- OS cruft ---
 .DS_Store
 
