@@ -36,6 +36,64 @@ The old framing described four fixed jobs (J1–J4) glued together by hand. That
 
 Pinned image tags (verify on first `make up`): `redpandadata/redpanda` (chart-managed), `flink-kubernetes-operator:1.9.0`, `flink:1.19.1-scala_2.12-java11`, `python:3.12-slim`.
 
+### 0.3 Implementation status & handoff (read this first on the VM)
+
+> Snapshot as of commit `4c9a4b9`. This section is the contract for the next
+> agent (DeepSeek) picking this up on the VM: what exists, what runs without a
+> cluster, what is still a stub, and the exact commands to validate.
+
+**Shipped and dry-run verified (this commit):**
+
+| Piece | File | State |
+|---|---|---|
+| Control plane (thin FastAPI orchestrator) | `stream/control_api.py` | ✅ shipped — every endpoint works in `CONTROL_API_DRY_RUN=1` (proven with `TestClient`): `POST/GET /feeds`, `POST/GET /model-queries`, `POST /model-queries/{id}/scale`, `GET /metrics`, `POST /schemas`, `GET /catalog`, `GET /health` |
+| SQL Gateway client | `scripts/submit_sql.py` | ✅ shipped, stdlib-only — comment/quote-aware statement split; `--dry-run` verified (wind = 5 stmts, gb = 2) |
+| Streaming deps | `requirements-stream.txt` | ✅ fastapi, uvicorn, httpx, pydantic (separate from the frozen batch set) |
+| Deploy scaffolding | `deploy/**`, `Makefile` | ✅ written, YAML/JSON parse — **not yet run against a real cluster** |
+| Batch product | `src/`, `main.py`, `tests/` | ✅ unchanged — `pytest -q` 48 passed; `python main.py` baseline preserved |
+
+**What runs today WITHOUT a cluster** (verified on the dev box):
+
+```bash
+python main.py                                                     # batch pitch (unchanged)
+pytest -q -p no:warnings                                           # 48 passed
+python scripts/submit_sql.py deploy/flink/wind_demo_query.sql --dry-run
+CONTROL_API_DRY_RUN=1 uvicorn stream.control_api:app --port 8000   # serves /health, /feeds, ...
+```
+
+**What does NOT run yet — gaps the next agent must close:**
+
+- **No cluster tooling on the dev box**: `docker` / `kubectl` / `helm` / `k3d` / `rpk` are absent, so `make up`, `make feed-wind`, `make wind-demo`, `make status` cannot execute there. They need `make bootstrap` first (installs them).
+- **No control-api image**: `deploy/apps/control-api.yaml` references `battery-trader/stream:latest`, but there is **no `Dockerfile.stream`** to build it. Run the service locally with `uvicorn` until that ships.
+- **Producer/consumer are stubs**: `stream/producer_replay.py` and `stream/model_consumer.py` do not exist. `make replay` prints *"not implemented yet"*. Nothing emits `feeds.*` records without a live Connect pipeline.
+- **Connect + Flink unverified against real images**: the Redpanda Connect pipelines and `wind_demo_query.sql` are written but never executed against the pinned images.
+- **VERIFY items still open**: see §14 (schema-registry port, Connect image tag/entrypoint, Elexon field names, Flink Operator CRD group/version).
+
+**Fresh-VM runbook (first time on the VM):**
+
+```bash
+git clone <repo> && cd htb
+make bootstrap            # once: docker, kubectl, helm, k3d, rpk, jq + pre-pull images
+make up                   # k3d cluster + Redpanda + schema registry + all topics (atomic, idempotent)
+make deploy-apps          # build/run control-api (needs Dockerfile.stream — see gaps above)
+make feed-wind            # Connect pipeline -> feeds.elexon.wind_forecast
+make query-wind-demo      # POST model query or submit_sql.py -> features.wind-demo.v1
+make wind-demo            # end-to-end convenience: feed + query + consume output
+```
+
+Local service without k8s: `pip install -r requirements-stream.txt && uvicorn stream.control_api:app --port 8000` (set `CONTROL_API_DRY_RUN=1` to log instead of calling `rpk`/`kubectl`).
+
+**Handoff — build order for the next agent (DeepSeek):**
+
+1. `Dockerfile.stream` (`python:3.12-slim` + `requirements-stream.txt` + `stream/`) so `make deploy-apps` can build/run the control-api image `battery-trader/stream:latest`.
+2. `docker-compose.yml` fallback (Redpanda + one Flink session + control-api) — closes the 22:00 gate-flip path (§13).
+3. `stream/producer_replay.py` — replay `src/fetch.py` parquet into `feeds.elexon.*` at `SPEEDx`, keys matching live, `published_at` never in the future (unblocks `make replay`; §10).
+4. `stream/model_consumer.py` — `features.<model>.v1` → `predictions.<model>.v1` (optional model attach).
+5. Run §14 VERIFY on the VM; fix the known-unknowables in place (do not assume field names/ports).
+6. Streamlit "Streaming" tab in `app/dashboard.py` (read-only catalogue + live feature tail).
+
+**Rule:** every item above must be *run*, not merely written, before it is marked done (§0.1.5). Keep `pytest` + `python main.py` green throughout.
+
 ---
 
 ## 1. Architecture
@@ -440,25 +498,30 @@ Rules: at each gate, state pass/fail out loud; do not silently continue past a f
 
 ```
 stream/
-  control_api.py        # FastAPI: /feeds /model-queries /scale /catalog /metrics (Section 6)
-  producer_replay.py    # historical -> feeds.* at SPEEDx (Section 10)
-  model_consumer.py     # features.<model>.v1 -> predictions.<model>.v1 (optional, if a model is attached)
-  contracts.py          # pydantic models for Feed / ModelQuery / envelopes
+  __init__.py
+  control_api.py        # ✅ FastAPI: /feeds /model-queries /scale /metrics /schemas /catalog /health (Section 6)
+  producer_replay.py    # ⬜ historical -> feeds.* at SPEEDx (Section 10) — NOT implemented yet
+  model_consumer.py     # ⬜ features.<model>.v1 -> predictions.<model>.v1 (optional) — NOT implemented yet
+  contracts.py          # ⬜ (Feed/ModelQuery pydantic models currently live inline in control_api.py)
 deploy/
-  bootstrap.sh          # one-time VM tooling install
-  redpanda-values.yaml  # 1-broker dev broker + built-in schema registry
-  topics-job.yaml       # idempotent topic creation
-  connect/wind_forecast.yaml   # first feed pipeline (template for others)
-  flink/sql-gateway.yaml  wind_demo_query.sql  wind_demo_model_query.json
-  apps/control-api.yaml        # ServiceAccount + RBAC + Deployment + Service
-  gb_imbalance_model_query.json # second model (sharing/isolation proof)
-  rbac.yaml            # cluster glue (operator, connect) if needed
-docker-compose.yml     # fallback path (Section 13)
+  bootstrap.sh          # ✅ one-time VM tooling install
+  redpanda-values.yaml  # ✅ 1-broker dev broker + built-in schema registry
+  topics-job.yaml       # ✅ idempotent topic creation
+  connect/wind_forecast.yaml    # ✅ first feed pipeline (VERIFY against the real image)
+  flink/sql-gateway.yaml  wind_demo_query.sql  wind_demo_model_query.json   # ✅
+  flink/gb_imbalance_model_query.json           # ✅ second model (sharing/isolation proof)
+  apps/control-api.yaml # ✅ SA + RBAC + Deployment + Service (image NOT built yet — no Dockerfile.stream)
+  rbac.yaml             # ⬜ cluster glue (operator, connect) if needed
+docker-compose.yml      # ⬜ fallback path (Section 13) — NOT written yet
 scripts/
-  submit_sql.py        # SQL Gateway thin client (Section 7.3)
-app/dashboard.py       # add a "Streaming" tab: feeds, model queries, live feature tail
-Makefile               # make up / feed-wind / query-wind-demo / wind-demo / scale / replay ...
+  submit_sql.py         # ✅ SQL Gateway thin client (Section 7.3) — dry-run verified
+requirements-stream.txt # ✅ fastapi, uvicorn, httpx, pydantic
+app/dashboard.py        # ⬜ add a "Streaming" tab: feeds, model queries, live feature tail
+Makefile                # ✅ up / feed-wind / query-wind-demo / wind-demo / scale / replay ...
 ```
+
+Legend: ✅ shipped in this commit · ⬜ still to build.
+
 
 `app/dashboard.py` gets one new **Streaming** tab (read-only): catalogue tables, per-job status/throughput, and a live tail of the selected `features.<model>.v1` topic. No writes from the dashboard in the demo.
 
@@ -493,11 +556,18 @@ make status                                # task-managers 1 -> 6
 make scale JOB=wind-demo REPLICAS=1
 ```
 
+**Two tiers of verification:**
+
+- **Dev box (no cluster):** `pytest`, `python main.py`, `python scripts/submit_sql.py … --dry-run`, and the control-api `TestClient` smoke with `CONTROL_API_DRY_RUN=1`. All currently pass.
+- **VM (full stack):** everything below. **None of it has run against a real cluster yet** — treat every check as unproven until you see it green on the VM.
+
 Known-unknowables to confirm on first run (fix in place, don't assume):
-- Redpanda chart schema-registry listener/port (`:8081`).
-- Redpanda Connect image tag + entrypoint/args (`run /connect/<id>.yaml`).
-- Elexon WINDFOR / demand / price field names ↔ the `mapping` blocks and `wind_demo_query.sql`.
-- Flink Operator chart repo/tag and the `flinkdeployments` CRD group/version.
+
+- [ ] Redpanda chart schema-registry listener/port (`:8081`).
+- [ ] Redpanda Connect image tag + entrypoint/args (`run /connect/<id>.yaml`).
+- [ ] Elexon WINDFOR / demand / price field names ↔ the `mapping` blocks and `wind_demo_query.sql`.
+- [ ] Flink Operator chart repo/tag and the `flinkdeployments` CRD group/version.
+- [ ] `Dockerfile.stream` exists and the `deploy/apps/control-api.yaml` image builds.
 
 ## Appendix — quick commands
 
