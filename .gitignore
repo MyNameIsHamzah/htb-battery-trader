@@ -1,9 +1,6 @@
-
 *.pyc
 *.parquet
 data/
-.env
-.venv/
 
 # --- Virtual environments ---
 venv/
@@ -35,5 +32,3 @@ outputs/
 .idea/
 # --- OS cruft ---
 .DS_Store
-
->>>>>>> 36cec0e789b9e9825bfae63ccae438591188b0da
