@@ -13,10 +13,7 @@ if is_synthetic():
     print("!! SYNTHETIC DATA — numbers are meaningless until data/prices.parquet exists\n")
 
 results = [run("naive"), run("perfect")] + [run("day_ahead", model_name=m) for m in BASELINES]
-try:
-    results.append(run("day_ahead_rt"))
-except NotImplementedError:
-    pass
+results.append(run("day_ahead_rt"))
 bt = pd.concat(results)
 bt.to_parquet(OUT / "backtest.parquet")
 
@@ -30,3 +27,12 @@ summary = pd.DataFrame({
 summary["%_of_perfect"] = 100 * summary["total_£"] / summary.loc["perfect", "total_£"]
 summary["vs_naive_%"] = 100 * (summary["total_£"] / summary.loc["naive", "total_£"] - 1)
 print(summary.round(1).sort_values("total_£").to_string())
+
+# Honest C - B: same model, with vs without real-time re-planning.
+print()
+for rt_name in [s for s in summary.index if s.startswith("day_ahead_rt:")]:
+    base = rt_name.replace("day_ahead_rt:", "day_ahead:")
+    if base in summary.index:
+        c, b = summary.loc[rt_name, "total_£"], summary.loc[base, "total_£"]
+        print(f"Real-time re-planning ({rt_name}): C-B = £{c - b:+,.1f} "
+              f"(C £{c:,.0f} vs B £{b:,.0f}, {100 * (c / b - 1) if b else 0:+.1f}%)")
