@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 from src.backtest import run
 from src.data import is_synthetic
-from src.model import BASELINES
+from src.model import ALL_MODELS
 
 warnings.filterwarnings("ignore", message=".*SYNTHETIC.*")
 OUT = Path("outputs"); OUT.mkdir(exist_ok=True)
@@ -12,7 +12,7 @@ OUT = Path("outputs"); OUT.mkdir(exist_ok=True)
 if is_synthetic():
     print("!! SYNTHETIC DATA — numbers are meaningless until data/prices.parquet exists\n")
 
-results = [run("naive"), run("perfect")] + [run("day_ahead", model_name=m) for m in BASELINES]
+results = [run("naive"), run("perfect")] + [run("day_ahead", model_name=m) for m in ALL_MODELS]
 results.append(run("day_ahead_rt"))
 bt = pd.concat(results)
 bt.to_parquet(OUT / "backtest.parquet")
