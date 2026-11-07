@@ -1,0 +1,9 @@
+{
+  "model_id": "gb-imbalance-price",
+  "version": 1,
+  "inputs": ["elexon-fuelinst", "elexon-system-price"],
+  "output_topic": "features.gb-imbalance-price.v1",
+  "sql": "CREATE TABLE features_gb_imbalance_price (\n  model_id STRING,\n  feature_set_version INT,\n  prediction_key STRING,\n  delivery_start TIMESTAMP(3),\n  `as_of` TIMESTAMP(3),\n  features ROW<generation_mw DOUBLE, price_gbp_mwh DOUBLE>\n) WITH (\n  'connector' = 'kafka',\n  'topic' = 'features.gb-imbalance-price.v1',\n  'properties.bootstrap.servers' = 'redpanda-0.redpanda.redpanda.svc.cluster.local:9093',\n  'format' = 'json'\n);\nINSERT INTO features_gb_imbalance_price SELECT 'gb-imbalance-price' AS model_id, 1 AS feature_set_version, CONCAT('FUEL|', f.fuel_type, '|', DATE_FORMAT(f.event_time, 'yyyy-MM-dd''T''HH:mm:ss''Z''')) AS prediction_key, f.event_time AS delivery_start, f.event_time AS `as_of`, ROW(f.generation_mw, p.price_gbp_mwh) AS features FROM elexon_fuelinst AS f LEFT JOIN elexon_system_price AS p ON p.event_time = f.event_time",
+  "owner": "battery-trader"
+}
+
