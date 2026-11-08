@@ -5,6 +5,7 @@ used. It MUST be < decision_time(day).
 """
 from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
+import numpy as np
 import pandas as pd
 from src import config
 from src.data import load_prices, load_wind_forecast, load_demand_forecast
@@ -30,7 +31,7 @@ def day_ahead_features(day: date) -> pd.DataFrame:
     lag7 = p.reindex(idx - pd.Timedelta(days=7)).to_numpy()
     hist = known[known.index >= cutoff - pd.Timedelta(days=14)]
     mean_by_hour = hist.groupby([hist.index.hour, hist.index.minute]).mean()
-    mbh = [mean_by_hour.get((t.hour, t.minute), float("nan")) for t in idx]
+    mbh = np.array([mean_by_hour.get((t.hour, t.minute), float("nan")) for t in idx])
 
     wind_df = load_wind_forecast()
     wind_valid = wind_df[wind_df["published_at"] < cutoff]
@@ -58,15 +59,27 @@ def day_ahead_features(day: date) -> pd.DataFrame:
     demand_reindexed = demand_reindexed.bfill()
     demand_pub = demand_pub.bfill().fillna(cutoff - pd.Timedelta(seconds=1))
 
+    hours = idx.hour + idx.minute / 60
+    dow = idx.dayofweek
+    wind_arr = wind_reindexed.to_numpy()
+    demand_arr = demand_reindexed.to_numpy()
+    last_known_val = known.iloc[-1] if len(known) else float("nan")
+
     df = pd.DataFrame({
-        "hour": idx.hour + idx.minute / 60,
-        "dow": idx.dayofweek,
+        "hour": hours,
+        "dow": dow,
+        "is_weekend": (dow >= 5).astype(float),
+        "hour_sin": np.sin(2 * np.pi * hours / 24),
+        "hour_cos": np.cos(2 * np.pi * hours / 24),
         "price_lag_2d": lag2,
         "price_lag_7d": lag7,
-        "price_last_known": known.iloc[-1] if len(known) else float("nan"),
+        "price_last_known": last_known_val,
         "mean_by_hour_14d": mbh,
-        "wind_forecast_mw": wind_reindexed.to_numpy(),
-        "demand_forecast_mw": demand_reindexed.to_numpy(),
+        "wind_forecast_mw": wind_arr,
+        "demand_forecast_mw": demand_arr,
+        "net_demand_mw": demand_arr - wind_arr,
+        "spread_known": last_known_val - mbh,
+        "spread_lag2": lag2 - mbh,
     }, index=idx)
 
     price_pub = known.index.max() + pd.Timedelta("30min") if len(known) else (cutoff - pd.Timedelta(seconds=1))
