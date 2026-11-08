@@ -240,4 +240,13 @@ interval attached.
    £213,258 / MAE 38.5) — do not publish it; M1 regenerates it.
 6. **37 days is not enough to rank good models.** Until M6/M7 land, treat any UK
    ordering inside the noise band as unresolved, not as a finding.
+7. **Data extension is possible but blocked on the frozen windows.** Probed 2026-11-08
+   (`make coverage`): MID from ~2016-10, system prices ~2016-01, FUELINST ~2017-01,
+   WINDFOR ~2016-07 (not shallow), day-ahead demand forecast **~2022**. So 2022-01-01
+   is the latest date where all five sources exist → ~1,771 days / ~85,000 feature
+   rows (≈12× today's 7,344) and **~310 test days instead of 37**. Pulling it is one
+   command (`make data DATA_START=2022-01-01 FORCE=--force`), but training on it
+   needs `TRAIN_START`/`TEST_START` in `src/config.py`, which is frozen — needs
+   team sign-off. `make walkforward` gives the extra evaluation days *without* it.
+
 
