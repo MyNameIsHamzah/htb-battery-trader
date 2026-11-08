@@ -12,7 +12,6 @@ OUT = Path("outputs"); OUT.mkdir(exist_ok=True)
 if is_synthetic():
     print("!! SYNTHETIC DATA — numbers are meaningless until data/prices.parquet exists\n")
 
-<<<<<<< HEAD
 LGBM_MODELS = ["lgbm", "lgbm_peak"]
 results = (
     [run("naive"), run("perfect")]
@@ -23,10 +22,8 @@ try:
     results.append(run("day_ahead_rt"))
 except NotImplementedError:
     pass
-=======
 results = [run("naive"), run("perfect")] + [run("day_ahead", model_name=m) for m in ALL_MODELS]
 results.append(run("day_ahead_rt"))
->>>>>>> hamzah/main
 bt = pd.concat(results)
 bt.to_parquet(OUT / "backtest.parquet")
 
