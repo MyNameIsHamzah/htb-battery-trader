@@ -57,7 +57,7 @@ Every model is reported with BOTH test MAE and backtest £. Expected finding: lo
 
 ## Phases
 - **Phase 1 (must have, by 19:30):** day-ahead pipeline end to end with baseline forecast.
-- **Phase 2 (by 22:00):** LightGBM forecast beats baselines; dashboard backtest tab.
+- **Phase 2 (by 22:00):** LightGBM forecast beats baselines; £ / rank-IC report.
 - **Phase 3 (Sun morning, the wow):** intraday re-planning + **replay demo**.
 
 ---
@@ -71,7 +71,6 @@ src/model.py             # day-ahead + intraday forecasts      — B
 src/optimise.py          # LP schedule                         — C
 src/backtest.py          # naive / da / da+rt / perfect        — C
 src/replay.py            # streams a past day period by period — C/D
-app/dashboard.py         # Streamlit                           — D
 main.py                  # prints the 4 pitch numbers
 ```
 
@@ -133,7 +132,10 @@ def run(strategy: str, start: date, end: date) -> pd.DataFrame:
 ```
 P&L per period: see **Settlement model** above (DA at MID, deviations at SSP).
 
-### Replay (C/D) — the demo engine
+### Replay (C/D) — demo engine, **pending move to the demo repo**
+
+`src/replay.py` stays in this repo only until its test moves with it (see `PLAN.md` §3.1).
+Nothing in the model path imports it.
 ```python
 def replay(day: date, speed: float = 60) -> Iterator[dict]:
     """Yields one event per period, as if live: {ts, new_data, forecast_remaining,
@@ -141,30 +143,6 @@ def replay(day: date, speed: float = 60) -> Iterator[dict]:
     speed=60 → a full day in ~24 min; speed=500 → ~3 min for the pitch."""
 ```
 
-### Dashboard (D) — Streamlit
-
-**Principle:** HRT engineers want evidence, not decoration. Every chart answers one question a judge would otherwise ask. **Chart title = the conclusion** ("Model beats naive by 34% over 37 test days"), not the description ("Cumulative P&L").
-
-| # | Question it answers | Chart | Priority |
-|---|---|---|---|
-| 1 | Does it make money? | Cumulative P&L over test period, 4 lines (naive / DA / DA+RT / perfect). Shade drawdowns | Sat 19:30–22:00 |
-| 2 | Is it luck? | Histogram of daily £ vs naive + table: total £, mean/day, worst day, % winning days, % of perfect | Sat 19:30–22:00 |
-| 3 | Lower error = more money? | Scatter: x = test MAE, y = backtest £, one point per model. Core insight slide | Sun AM |
-| 4 | What does the bot actually do? | One day, 3 stacked panels: forecast vs actual price / charge-discharge bars / SoC line. **Animated = replay demo** | Sat 19:30–22:00 |
-| 5 | Where does the edge come from? | Heatmap £ by hour × weekday; bar £ on windy vs calm days and negative-price days | Sun AM |
-| 6 | What did real-time add? | £C − £B per day, deviation P&L at imbalance price. Show honestly even if small/negative | Sun AM |
-
-**Tabs**
-1. **Results** (charts 1, 2, 3, 6) — the evidence.
-2. **Replay** (chart 4 animated): pre-picked dramatic test day (wind drop / negative prices). Forecast updates, plan redrawn, SoC gauge, P&L ticker, banner on plan change ("Wind 2 GW below forecast → holding charge for 18:00 peak").
-3. **Edge** (chart 5) — why it works.
-4. **Live:** latest Elexon data → tomorrow's forecast + plan (proves it runs on real live data).
-
-**Don't build:** maps, 3D, decorative animation, raw-data plots without a takeaway, any accuracy number without a baseline beside it.
-
-**Why replay:** live data during judging may be boring. A pre-picked dramatic day guarantees the wow moment; the Live tab proves it's real.
-
-**Demo order in pitch:** Chart 1 (it works) → Replay (how it works) → Chart 3 (the insight) → Chart 2 + caveats slide (it's honest).
 
 ---
 
@@ -174,7 +152,7 @@ def replay(day: date, speed: float = 60) -> Iterator[dict]:
 | 17:00 | Spec agreed, repo pushed, stubs in every module |
 | 18:00 | prices + imbalance + FUELINST parquet for 6 months. LP solves one day |
 | **19:30** | `python main.py` prints naive / day-ahead (baseline) / perfect |
-| **22:00** | LightGBM beats baselines; dashboard backtest tab |
+| **22:00** | LightGBM beats baselines; £ / rank-IC report |
 | 23:00 | Go home. A picks 3 dramatic test days before leaving |
 | Sun 08:00 | Intraday re-plan in backtest, replay + live tabs |
 | **10:00** | Feature freeze |
@@ -200,6 +178,16 @@ Real trading, multiple batteries, deep learning, frequency response markets.
 
 ---
 
-## Streaming platform (separate track)
+## Serving scope — this repo's only runtime job
 
-The real-time "stream-to-model control plane" is specified in **`SPEC-streaming.md`**; its **§0.3** is the current implementation status + VM handoff. As of commit `4c9a4b9`: the thin FastAPI control plane (`stream/control_api.py`), the SQL Gateway client (`scripts/submit_sql.py`), and all deploy scaffolding are shipped and dry-run verified; the replay/consumer producers, `Dockerfile.stream`, and the `docker-compose` fallback are still to build. **This batch pipeline (`src/`, `main.py`) is unchanged and stays green** — the streaming work must never regress it.
+The model is deployed to k8s as a subscriber to the query-output feature topic and
+publishes a prediction whenever it receives an updated record. The seam is
+**`INTERFACE.md`**; the phased roadmap is **`PLAN.md`**.
+
+Feeds, Connect, Flink ModelQuery, Redpanda, topic provisioning, the control plane and
+dashboards are **not** in this repo — they live in the platform repo. The old
+`SPEC-streaming.md` moved there (recoverable here via
+`git show pre-refocus:SPEC-streaming.md`). This batch pipeline (`src/`, `main.py`) stays
+green, and the lab and the service share one feature contract, so train/serve skew is
+structurally impossible rather than merely tested for.
+

@@ -4,5 +4,5 @@ scipy>=1.11
 pyarrow
 requests
 pytest
-streamlit
 lightgbm
+scikit-learn

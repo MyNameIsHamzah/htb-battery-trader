@@ -1,0 +1,15 @@
+# Non-secret config for the price-model service. Broker address is NOT here: it comes
+# from the Secret `price-model-secrets` (KAFKA_BOOTSTRAP), which the platform repo owns.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: price-model-config
+  labels:
+    app.kubernetes.io/name: price-model
+    app.kubernetes.io/part-of: battery-trader
+data:
+  FEATURES_TOPIC: features.gb-price.v1
+  PREDICTIONS_TOPIC: predictions.gb-price.v1
+  CONSUMER_GROUP: model-gb-price-v1
+  ARTIFACT_DIR: /app/artifacts/gb-price/v1
+  MODEL_ID: gb-price

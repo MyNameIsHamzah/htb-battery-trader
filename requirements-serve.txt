@@ -1,0 +1,6 @@
+# Serving-only dependency. Deliberately NOT in requirements.txt: the lab, the tests
+# and `python main.py` must never need a broker client, and `ReplayTransport` runs
+# the identical serve loop without one.
+#
+#   pip install -r requirements-serve.txt     # only for --kafka
+confluent-kafka>=2.5

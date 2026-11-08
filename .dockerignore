@@ -1,0 +1,16 @@
+# The image ships the model and the service. Lab data, tests and tooling do not.
+# `artifacts/` IS shipped — it is the model. `make train` must run before `make image`.
+.git
+.gitignore
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+data/
+outputs/
+tests/
+tasks/
+scripts/
+PLAN.md
+README.md
+SPEC.md

@@ -45,6 +45,8 @@ SHAPE_EXTRA_COLS = ["mbh_shape", "net_demand_shape", "wind_shape"]
 SHAPE_FEATURE_COLS = FEATURE_COLS + SHAPE_EXTRA_COLS
 
 LGBM_NAMES = ("lgbm", "lgbm_peak", "lgbm_direct", "lgbm_shape")
+LGBM_MODELS = LGBM_NAMES          # alias kept for main.py / tests
+ALL_MODELS = list(BASELINES) + list(LGBM_NAMES)
 
 # Peak hours in UTC (morning + evening ramp) used for peak-weighted variant
 _PEAK_HOURS = set(range(7, 10)) | set(range(16, 21))

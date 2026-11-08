@@ -1,0 +1,78 @@
+# One pod consumes feature records, predicts, produces prediction records.
+#
+# Contract (INTERFACE.md): 1 input event -> 1 output event, keyed by `prediction_key`.
+# The service is stateless; offsets live in Kafka under CONSUMER_GROUP, so a restart
+# replays rather than loses. SCALING: keep replicas at 1 until you have measured it —
+# more replicas means a rebalance and (because acks are per-partition) more reprocessing.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: price-model
+  labels:
+    app.kubernetes.io/name: price-model
+    app.kubernetes.io/part-of: battery-trader
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate          # never two model versions consuming the same group at once
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: price-model
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: price-model
+      annotations:
+        prometheus.io/scrape: "false"   # no HTTP surface: metrics are the log lines
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+      containers:
+        - name: model
+          image: battery/price-model:v1     # replaced by CI with an immutable tag
+          imagePullPolicy: IfNotPresent
+          args: ["--kafka"]
+          envFrom:
+            - configMapRef:
+                name: price-model-config
+          env:
+            - name: KAFKA_BOOTSTRAP
+              valueFrom:
+                secretKeyRef:
+                  name: price-model-secrets
+                  key: KAFKA_BOOTSTRAP
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          # The probe is the real serve path on a synthetic record: validate -> predict
+          # -> serialise. It fails if the artifact, the feature set version or the code
+          # disagree, which is exactly the boot-time crash loop we want.
+          readinessProbe:
+            exec:
+              command: ["python", "-m", "src.serve", "--probe"]
+            initialDelaySeconds: 5
+            periodSeconds: 30
+            timeoutSeconds: 20
+          livenessProbe:
+            exec:
+              command: ["python", "-m", "src.serve", "--probe"]
+            initialDelaySeconds: 30
+            periodSeconds: 120
+            timeoutSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

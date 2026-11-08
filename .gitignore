@@ -26,6 +26,8 @@ dist/
 
 # --- Generated outputs ---
 outputs/
+# `make train` writes these; the Docker image bakes them in, git does not store them.
+artifacts/
 
 # --- VS Code / editors ---
 .vscode/
