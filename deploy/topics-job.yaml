@@ -1,0 +1,65 @@
+# Idempotent topic creation for the Stream-to-Model control plane
+# (SPEC-streaming.md Section 4). Applied by `make topics` / `make up`.
+# Runs rpk inside the broker image already pulled.
+#
+# Naming convention:
+#   feeds.<source>.<dataset>        shared source topics (one writer per feed)
+#   features.<model>.v<n>           model-specific feature topics
+#   predictions.<model>.v<n>        model-specific prediction topics
+#   control.audit                   control-plane action log
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: redpanda-create-topics
+  namespace: battery
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: create-topics
+          image: docker.redpanda.com/redpandadata/redpanda:latest   # VERIFY tag
+          env:
+            - name: BROKER
+              value: redpanda-0.redpanda.redpanda.svc.cluster.local:9093
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              echo "Waiting for broker $BROKER ..."
+              for i in $(seq 1 60); do
+                if rpk cluster info --brokers "$BROKER" >/dev/null 2>&1; then
+                  echo "  broker ready"; break
+                fi
+                echo "  not ready ($i)"; sleep 2
+              done
+
+              create() {
+                local name="$1" parts="$2"
+                echo "topic $name partitions=$parts"
+                rpk topic create "$name" -p "$parts" -r 1 --brokers "$BROKER" \
+                  || echo "  $name already exists (ok)"
+              }
+
+              # --- shared source topics (feeds) ---
+              create feeds.elexon.wind_forecast     3
+              create feeds.elexon.demand_forecast   1
+              create feeds.elexon.system_price      1
+              create feeds.elexon.fuelinst          3
+              create feeds.elexon.imbalance         1
+
+              # --- first vertical slice (wind-demo) ---
+              create features.wind-demo.v1          3
+              create predictions.wind-demo.v1       1
+
+              # --- second model (proves isolation: same feeds, own topics) ---
+              create features.gb-imbalance-price.v1 3
+              create predictions.gb-imbalance-price.v1 1
+
+              # --- control plane ---
+              create control.audit                   1
+
+              echo "--- topics ---"
+              rpk topic list --brokers "$BROKER"

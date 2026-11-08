@@ -1,0 +1,81 @@
+# Redpanda Connect pipeline for the Elexon wind-generation forecast feed.
+#   Feed resource: elexon-wind-forecast  ->  topic feeds.elexon.wind_forecast
+# This is the FIRST VERTICAL SLICE of SPEC-streaming.md (Section 8).
+#
+# Pattern (reused for every feed):
+#   http_client polls Elexon -> mapping extracts .data -> unarchive json_array
+#   fans out to one message per forecast row -> mapping shapes the feed record
+#   -> kafka output keyed by the feed's key_fields.
+#
+# VERIFY on the VM: connect image tag, the entrypoint/args, and Elexon WINDFOR
+# field names (startTime / publishTime / generation / tradeType).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: connect-wind-forecast
+  namespace: battery
+data:
+  wind_forecast.yaml: |
+    rate_limit_resources:
+      - label: elexon_poll
+        local:
+          count: 1
+          interval: 60s
+
+    input:
+      label: elexon-wind-forecast
+      http_client:
+        url: >-
+          https://data.elexon.co.uk/bmrs/api/v1/datasets/WINDFOR?publishDateTimeFrom=${! (timestamp_unix()-3600).ts_format("2006-01-02T15:04:05Z", "UTC").escape_url_query() }&publishDateTimeTo=${! (timestamp_unix()+300).ts_format("2006-01-02T15:04:05Z", "UTC").escape_url_query() }&format=json
+        verb: GET
+        timeout: 30s
+        rate_limit: elexon_poll
+
+    pipeline:
+      processors:
+        - mapping: 'root = this.data'
+        - unarchive:
+            format: json_array
+        - mapping: |
+            root.event_time     = this.startTime
+            root.published_at   = this.publishTime
+            root.region         = "GB"
+            root.delivery_start = this.startTime
+            root.forecast_mw    = this.generation
+            root.trade_type     = this.tradeType
+
+    output:
+      label: to-feed-topic
+      kafka:
+        addresses: ["redpanda-0.redpanda.redpanda.svc.cluster.local:9093"]
+        topic: feeds.elexon.wind_forecast
+        client_id: connect-wind-forecast
+        key: ${! json("region") + "|" + json("delivery_start") }
+        max_in_flight: 1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: connect-wind-forecast
+  namespace: battery
+  labels: { app: connect-wind-forecast, feed: elexon-wind-forecast }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: connect-wind-forecast }
+  template:
+    metadata:
+      labels: { app: connect-wind-forecast, feed: elexon-wind-forecast }
+    spec:
+      containers:
+        - name: connect
+          image: docker.redpanda.com/redpandadata/connect:latest   # VERIFY/pin tag
+          args: ["run", "/connect/wind_forecast.yaml"]             # VERIFY entrypoint
+          volumeMounts:
+            - name: cfg
+              mountPath: /connect
+              readOnly: true
+      volumes:
+        - name: cfg
+          configMap:
+            name: connect-wind-forecast

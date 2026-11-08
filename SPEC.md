@@ -197,3 +197,9 @@ Real trading, multiple batteries, deep learning, frequency response markets.
 | Gen by fuel (30-min) | `/datasets/FUELHH` | |
 | Wind forecast | `/datasets/WINDFOR` | keep publish time |
 | Embedded solar (optional) | `https://api.pvlive.uk/pvlive/api/v4/gsp/0` | Sheffield Solar |
+
+---
+
+## Streaming platform (separate track)
+
+The real-time "stream-to-model control plane" is specified in **`SPEC-streaming.md`**; its **§0.3** is the current implementation status + VM handoff. As of commit `4c9a4b9`: the thin FastAPI control plane (`stream/control_api.py`), the SQL Gateway client (`scripts/submit_sql.py`), and all deploy scaffolding are shipped and dry-run verified; the replay/consumer producers, `Dockerfile.stream`, and the `docker-compose` fallback are still to build. **This batch pipeline (`src/`, `main.py`) is unchanged and stays green** — the streaming work must never regress it.

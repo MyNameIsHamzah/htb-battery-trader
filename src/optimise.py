@@ -8,6 +8,8 @@ Binary per period stops simultaneous charge+discharge (an LP would 'burn'
 energy through efficiency losses to get paid at negative prices).
 """
 from __future__ import annotations
+import time
+import warnings
 import numpy as np
 import pandas as pd
 from scipy.optimize import milp, LinearConstraint, Bounds
@@ -62,11 +64,17 @@ def schedule(prices: pd.Series, soc0_mwh: float = C.SOC_START_MWH,
         ub[id_:id_ + n] = np.where(np.asarray(discharge_allowed), P, 0.0)
     integrality = np.zeros(nv); integrality[ib:ib + n] = 1
 
+    t0 = time.perf_counter()
     res = milp(cost, constraints=LinearConstraint(A.tocsr(), lo, hi),
                bounds=Bounds(lb, ub), integrality=integrality,
                options={"time_limit": 10})
+    elapsed = time.perf_counter() - t0
+    if elapsed > 2.0:
+        warnings.warn(f"MILP slow: {elapsed:.1f}s for horizon n={n}", stacklevel=2)
     if res.x is None:
         raise RuntimeError(f"MILP failed: {res.message}")
+    if not res.success:
+        warnings.warn(f"MILP not optimal ({res.message}) for horizon n={n}", stacklevel=2)
     x = res.x
     c = np.round(x[ic:ic + n], 6); d = np.round(x[id_:id_ + n], 6)
     c[c < 1e-6] = 0; d[d < 1e-6] = 0

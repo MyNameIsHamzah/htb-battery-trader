@@ -1,0 +1,88 @@
+# Control-plane service: FastAPI app that manages Feed + ModelQuery resources.
+#   POST /feeds          -> create topic + register schema + deploy Connect pipeline + catalogue
+#   POST /model-queries  -> resolve feeds -> generate Flink DDL -> deploy job + register output
+#   GET  /feeds, /model-queries, /catalog, /metrics
+#
+# Backing code: stream/control_api.py (shipped). This manifest is the runtime +
+# RBAC the service needs. Build the image (Dockerfile.stream — VERIFY) or run it
+# locally with: uvicorn stream.control_api:app --port 8000
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: control-api
+  namespace: battery
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: control-api
+  namespace: battery
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "create", "patch", "update", "delete"]
+  - apiGroups: [""]
+    resources: ["configmaps", "services"]
+    verbs: ["get", "list", "create", "patch", "update", "delete"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "create", "delete"]
+  - apiGroups: ["flink.apache.org"]
+    resources: ["flinkdeployments"]
+    verbs: ["get", "list", "create", "patch", "update", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: control-api
+  namespace: battery
+subjects:
+  - kind: ServiceAccount
+    name: control-api
+    namespace: battery
+roleRef:
+  kind: Role
+  name: control-api
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: control-api
+  namespace: battery
+  labels: { app: control-api }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: control-api }
+  template:
+    metadata:
+      labels: { app: control-api }
+    spec:
+      serviceAccountName: control-api
+      containers:
+        - name: control-api
+          image: docker.io/battery-trader/stream:latest   # built from Dockerfile.stream (VERIFY)
+          command: ["uvicorn", "stream.control_api:app", "--host", "0.0.0.0", "--port", "8000"]
+          ports:
+            - containerPort: 8000
+          env:
+            - name: BROKER
+              value: redpanda-0.redpanda.redpanda.svc.cluster.local:9093
+            - name: SCHEMA_REGISTRY
+              value: http://redpanda-0.redpanda.redpanda.svc.cluster.local:8081
+            - name: FLINK_SQL_GATEWAY
+              value: http://sql-gateway:8083
+            - name: NAMESPACE
+              value: battery
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: control-api
+  namespace: battery
+spec:
+  selector: { app: control-api }
+  ports:
+    - port: 8000
+      targetPort: 8000

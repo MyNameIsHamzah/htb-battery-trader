@@ -1,0 +1,64 @@
+# Flink SQL Gateway (SPEC-streaming.md Section 7).
+# A session cluster (FlinkDeployment) + the standalone SQL Gateway REST endpoint
+# on :8083. The control plane submits generated DDL + the model INSERT here.
+#
+# VERIFY on first run: the SQL Gateway must reach the session cluster's REST
+# endpoint; if `rest.address` needs pinning, add
+#   -D rest.address=flink-sql-gateway-rest.flink.svc.cluster.local
+#   -D rest.port=8081
+apiVersion: flink.apache.org/v1beta1
+kind: FlinkDeployment
+metadata:
+  name: flink-sql-gateway
+  namespace: flink
+spec:
+  image: flink:1.19.1-scala_2.12-java11
+  flinkVersion: v1_19
+  flinkConfiguration:
+    taskmanager.numberOfTaskSlots: "2"
+  serviceAccount: flink
+  jobManager:
+    resource:
+      cpu: 1
+      memory: "1024m"
+  taskManager:
+    resource:
+      cpu: 1
+      memory: "2048m"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sql-gateway
+  namespace: flink
+  labels: { app: sql-gateway }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: sql-gateway }
+  template:
+    metadata:
+      labels: { app: sql-gateway }
+    spec:
+      containers:
+        - name: sql-gateway
+          image: flink:1.19.1-scala_2.12-java11   # VERIFY tag
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              /opt/flink/bin/sql-gateway.sh start-foreground \
+                -D sql-gateway.endpoint.rest.address=0.0.0.0 \
+                -D sql-gateway.endpoint.rest.port=8083
+          ports:
+            - containerPort: 8083
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sql-gateway
+  namespace: flink
+spec:
+  selector: { app: sql-gateway }
+  ports:
+    - port: 8083
+      targetPort: 8083
