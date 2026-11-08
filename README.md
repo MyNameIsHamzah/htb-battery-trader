@@ -12,19 +12,6 @@ It is built on Kubernetes, Redpanda (a Kafka-compatible event broker), and Apach
 
 ---
 
-## Why We Built It
-
-Machine learning models rarely fail because the model itself is bad. They fail because the data feeding them breaks, goes stale, or stops matching reality. A model that scored perfectly in testing becomes useless in production when:
-
-- The upstream API changes its format without warning.
-- A stream processing job silently stops saving its progress.
-- The live data slowly drifts away from what the model was trained on.
-- Nobody notices any of this until the business loses money.
-
-Most teams solve this with a pile of scripts, manual Kubernetes manifests, and ad-hoc monitoring. We wanted something cleaner: a single system where every pipeline stage is declared as code, reconciled automatically, and visible at a glance.
-
----
-
 ## The Core Idea
 
 You describe what you want, and the platform makes it happen.
@@ -43,7 +30,7 @@ You never manually wire anything up. You never run kubectl commands in a specifi
 
 The system has three main parts.
 
-**First**, there are the custom resources. These are the YAML files you write. They describe the feeds and queries you want. Kubernetes stores them as the source of truth.
+**First**, there are the custom resources. These are the YAML files you write. They describe the feeds and queries you want. Kubernetes stores them.
 
 **Second**, there are the controllers. These are background processes that watch your resources and make the real world match what you declared. When you create a Feed, the controller deploys a Redpanda Connect pod and configures it. When you create a ModelQuery, the controller deploys a Flink job and manages its lifecycle. If you delete a resource, the controller cleans up the infrastructure (though it keeps your data topics by default, so you can recover).
 
