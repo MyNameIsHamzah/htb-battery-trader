@@ -12,6 +12,16 @@ OUT = Path("outputs"); OUT.mkdir(exist_ok=True)
 if is_synthetic():
     print("!! SYNTHETIC DATA — numbers are meaningless until data/prices.parquet exists\n")
 
+LGBM_MODELS = ["lgbm", "lgbm_peak"]
+results = (
+    [run("naive"), run("perfect")]
+    + [run("day_ahead", model_name=m) for m in BASELINES]
+    + [run("day_ahead", model_name=m) for m in LGBM_MODELS]
+)
+try:
+    results.append(run("day_ahead_rt"))
+except NotImplementedError:
+    pass
 results = [run("naive"), run("perfect")] + [run("day_ahead", model_name=m) for m in ALL_MODELS]
 results.append(run("day_ahead_rt"))
 bt = pd.concat(results)
